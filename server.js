@@ -12,7 +12,8 @@ const cookieParser = require('cookie-parser');
 const serverless = require('serverless-http');
 const morgan = require('morgan');
 const winston = require('winston');
-
+const axios = require('axios');
+const crypto = require('crypto');
 
 // Create Winston logger for detailed logging
 const logger = winston.createLogger({
@@ -39,7 +40,7 @@ app.use(bodyParser.json());
 app.use(cookieParser());
 app.use(helmet());
 app.use(cors({
-  origin: 'http://localhost:3000', // adjust to your frontend domain
+  // adjust to your frontend domain if needed
   credentials: true,
 }));
 
@@ -78,6 +79,9 @@ const userSchema = new mongoose.Schema({
   password:    { type: String, required: true },
   country:     { type: String, required: true },
   phoneNumber: { type: String, required: true },
+  investmentBalance: { type: Number, default: 0 },
+  mines: { type: Number, default: 0 },
+  totalInvested: { type: Number, default: 0 },
 }, { timestamps: true });
 
 const User = mongoose.models.User || mongoose.model('User', userSchema);
@@ -116,6 +120,8 @@ const protect = (req, res, next) => {
 // ---------------------------
 // Authentication Routes
 // ---------------------------
+const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
+const baseURL = 'https://api.paystack.co';
 
 // Sign Up Route
 app.post('/api/auth/signup', async (req, res) => {
@@ -141,7 +147,7 @@ app.post('/api/auth/signup', async (req, res) => {
     });
     const token = generateToken(user);
     logger.info('User signed up successfully', { email: user.email, id: user._id });
-    // Set token in an HttpOnly cookie (do not send it in JSON)
+    // Set token in an HttpOnly cookie
     res.cookie('token', token, { httpOnly: true, secure: true, sameSite: 'Strict', maxAge: 7 * 24 * 60 * 60 * 1000 });
     res.status(201).json({ message: 'Sign up successful' });
   } catch (error) {
@@ -170,7 +176,7 @@ app.post('/api/auth/signin', async (req, res) => {
     }
     const token = generateToken(user);
     logger.info('User signed in successfully', { email: user.email, id: user._id });
-    // Set token in an HttpOnly cookie instead of returning it in JSON
+    // Set token in an HttpOnly cookie
     res.cookie('token', token, { httpOnly: true, secure: true, sameSite: 'Strict', maxAge: 7 * 24 * 60 * 60 * 1000 });
     res.status(200).json({ message: 'Sign in successful' });
   } catch (error) {
@@ -186,12 +192,140 @@ app.get('/api/auth/protected', protect, (req, res) => {
 });
 
 // ---------------------------
-// Wrap Express App for Serverless Deployment
+// Payment & Verification Logic
+// ---------------------------
+
+function logTransaction(action, details) {
+  console.log({
+    level: 'info',
+    timestamp: new Date().toISOString(),
+    action,
+    details
+  });
+}
+
+// Helper function to verify a transaction using Paystack API
+async function verifyTransaction(reference) {
+  try {
+    const response = await axios.get(
+      `${baseURL}/transaction/verify/${encodeURIComponent(reference)}`,
+      {
+        headers: {
+          Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`
+        }
+      }
+    );
+    logTransaction('VerificationResponse', {
+      reference,
+      status: response.status,
+      data: response.data
+    });
+    return response.data;
+  } catch (error) {
+    logTransaction('VerificationError', {
+      reference,
+      error: error.response ? error.response.data : error.message
+    });
+    throw error;
+  }
+}
+
+// Initiate Payment Endpoint
+// This endpoint calls Paystack to initiate a mobile money charge (using Mpesa) and does NOT update the user record immediately.
+app.post('/initiate-payment', async (req, res) => {
+  try {
+    const { amount, email, phone } = req.body;
+    logTransaction('PaymentInitiated', { amount, email, phone });
+    const response = await axios.post(
+      `${baseURL}/charge`,
+      {
+        amount: amount * 100, // Convert to kobo
+        email,
+        mobile_money: { phone, provider: 'mpesa' }
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+    logTransaction('PaystackAPIResponse', { status: response.status, data: response.data });
+    // Optionally, perform immediate verification
+    const verification = await verifyTransaction(response.data.data.reference);
+    res.json({ success: true, paymentInitiated: response.data, verificationResult: verification });
+  } catch (error) {
+    logTransaction('PaymentError', { error: error.response ? error.response.data : error.message, stack: error.stack });
+    const statusCode = error.response?.status || 500;
+    res.status(statusCode).json({ success: false, error: error.response?.data || error.message });
+  }
+});
+
+// Dedicated Verification Endpoint
+// This endpoint verifies a transaction and, if successful, updates the user's record in MongoDB.
+app.get('/verify-payment/:reference', async (req, res) => {
+  try {
+    const { reference } = req.params;
+    logTransaction('ManualVerificationAttempt', { reference });
+    const result = await verifyTransaction(reference);
+    if (result.data.status === 'success') {
+      const amount = result.data.amount / 100;
+      const user = await User.findOne({ email: result.data.customer.email });
+      if (user) {
+        user.investmentBalance += amount;
+        user.totalInvested += amount;
+        user.mines = Math.floor(user.investmentBalance / 500);
+        await user.save();
+      }
+    }
+    res.json({ success: true, verifiedData: result.data });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.response?.data || error.message });
+  }
+});
+
+// Paystack Webhook Handler
+// This endpoint processes incoming webhooks from Paystack to automatically update user records.
+app.post('/paystack-webhook', (req, res) => {
+  const signature = req.headers['x-paystack-signature'];
+  const hash = crypto.createHmac('sha512', PAYSTACK_SECRET_KEY)
+                     .update(JSON.stringify(req.body))
+                     .digest('hex');
+  if (hash !== signature) {
+    logTransaction('WebhookSecurityFail', { receivedSignature: signature, computedHash: hash });
+    return res.status(401).send('Unauthorized');
+  }
+  const event = req.body;
+  logTransaction('WebhookReceived', event);
+  switch (event.event) {
+    case 'charge.success':
+      logTransaction('PaymentSuccess', event.data);
+      // Update user record based on customer email
+      User.findOne({ email: event.data.customer.email }).then(user => {
+        if (user) {
+          user.investmentBalance += event.data.amount / 100;
+          user.totalInvested += event.data.amount / 100;
+          user.mines = Math.floor(user.investmentBalance / 500);
+          user.save();
+        }
+      });
+      break;
+    case 'charge.failed':
+      logTransaction('PaymentFailed', event.data);
+      break;
+    case 'transfer.success':
+      logTransaction('TransferSuccess', event.data);
+      break;
+    default:
+      logTransaction('UnhandledEvent', event);
+  }
+  res.sendStatus(200);
+});
+
+// ---------------------------
+// Start Server & Serverless Handler
 // ---------------------------
 app.listen(PORT, () => {
-    logger.info(`Server running on port ${PORT}`);
-   });
-   
+  logger.info(`Server running on port ${PORT}`);
+});
 module.exports.handler = serverless(app);
-
-// For local development, uncomment below:
