@@ -1,0 +1,28 @@
+{"level":"info","message":"Server running on port 4000","timestamp":"2025-03-09T18:24:45.997Z"}
+{"level":"info","message":"MongoDB connected","timestamp":"2025-03-09T18:24:47.047Z"}
+{"level":"info","message":"Server running on port 4000","timestamp":"2025-03-09T18:25:54.883Z"}
+{"level":"info","message":"MongoDB connected","timestamp":"2025-03-09T18:25:56.012Z"}
+{"email":"kenalan175@gmail.com","id":"67c70cc1b70b534688767027","level":"info","message":"User signed in successfully","timestamp":"2025-03-09T18:25:57.886Z"}
+{"level":"info","message":"::1 - - [09/Mar/2025:18:25:57 +0000] \"POST /api/auth/signin HTTP/1.1\" 200 224 \"http://localhost:3000/\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36\"","timestamp":"2025-03-09T18:25:57.894Z"}
+{"country":"Kenya","email":"vikiman365@gmail.com","level":"warn","message":"Signup failed: Missing fields","password":"aJIB2536","phoneNumber":"0759934421","timestamp":"2025-03-09T18:26:22.996Z"}
+{"level":"info","message":"::1 - - [09/Mar/2025:18:26:22 +0000] \"POST /api/auth/signup HTTP/1.1\" 400 46 \"http://localhost:3000/\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36\"","timestamp":"2025-03-09T18:26:22.999Z"}
+{"email":"vikiman365@gmail.com","level":"warn","message":"Signup failed: User already exists","timestamp":"2025-03-09T18:28:04.692Z"}
+{"level":"info","message":"::1 - - [09/Mar/2025:18:28:04 +0000] \"POST /api/auth/signup HTTP/1.1\" 400 31 \"http://localhost:3000/\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36\"","timestamp":"2025-03-09T18:28:04.694Z"}
+{"email":"vikiman165@gmail.com","id":"67cdddc026ac5ae0a1362646","level":"info","message":"User signed up successfully","timestamp":"2025-03-09T18:28:16.770Z"}
+{"level":"info","message":"::1 - - [09/Mar/2025:18:28:16 +0000] \"POST /api/auth/signup HTTP/1.1\" 201 224 \"http://localhost:3000/\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36\"","timestamp":"2025-03-09T18:28:16.772Z"}
+{"email":"vikiman365@gmail.com","id":"67c70dc5ccea343636d075f0","level":"info","message":"User signed in successfully","timestamp":"2025-03-09T18:29:53.544Z"}
+{"level":"info","message":"::1 - - [09/Mar/2025:18:29:53 +0000] \"POST /api/auth/signin HTTP/1.1\" 200 224 \"http://localhost:3000/\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36\"","timestamp":"2025-03-09T18:29:53.546Z"}
+{"level":"info","message":"Server running on port 4000","timestamp":"2025-03-09T18:40:54.157Z"}
+{"level":"info","message":"MongoDB connected","timestamp":"2025-03-09T18:40:55.277Z"}
+{"email":"kenalan175@gmail.com","level":"warn","message":"Signin failed: User not found","timestamp":"2025-03-09T18:41:22.489Z"}
+{"level":"info","message":"::1 - - [09/Mar/2025:18:41:22 +0000] \"POST /api/auth/signin HTTP/1.1\" 400 31 \"http://localhost:3000/\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36\"","timestamp":"2025-03-09T18:41:22.500Z"}
+{"email":"kenalan175@gmail.com","level":"warn","message":"Signin failed: User not found","timestamp":"2025-03-09T18:53:39.585Z"}
+{"level":"info","message":"::1 - - [09/Mar/2025:18:53:39 +0000] \"POST /api/auth/signin HTTP/1.1\" 400 31 \"http://localhost:3000/\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36\"","timestamp":"2025-03-09T18:53:39.590Z"}
+{"email":"vikiman365@gmail.com","id":"67cde3cee8b3819b845776b9","level":"info","message":"User signed up successfully","timestamp":"2025-03-09T18:54:07.057Z"}
+{"level":"info","message":"::1 - - [09/Mar/2025:18:54:07 +0000] \"POST /api/auth/signup HTTP/1.1\" 201 32 \"http://localhost:3000/\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36\"","timestamp":"2025-03-09T18:54:07.060Z"}
+{"email":"vikiman365@gmail.com","level":"warn","message":"Signup failed: User already exists","timestamp":"2025-03-09T18:55:15.908Z"}
+{"level":"info","message":"::1 - - [09/Mar/2025:18:55:15 +0000] \"POST /api/auth/signup HTTP/1.1\" 400 31 \"http://localhost:3000/\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36\"","timestamp":"2025-03-09T18:55:15.914Z"}
+{"email":"vikiman35@gmail.com","id":"67cde424e8b3819b845776bd","level":"info","message":"User signed up successfully","timestamp":"2025-03-09T18:55:32.327Z"}
+{"level":"info","message":"::1 - - [09/Mar/2025:18:55:32 +0000] \"POST /api/auth/signup HTTP/1.1\" 201 32 \"http://localhost:3000/\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36\"","timestamp":"2025-03-09T18:55:32.330Z"}
+{"email":"vikiman365@gmail.com","id":"67cde3cee8b3819b845776b9","level":"info","message":"User signed in successfully","timestamp":"2025-03-09T18:55:49.229Z"}
+{"level":"info","message":"::1 - - [09/Mar/2025:18:55:49 +0000] \"POST /api/auth/signin HTTP/1.1\" 200 32 \"http://localhost:3000/\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36\"","timestamp":"2025-03-09T18:55:49.233Z"}
