@@ -66,3 +66,7 @@
 {"level":"info","message":"MongoDB connected","timestamp":"2025-03-09T22:13:41.553Z"}
 {"level":"info","message":"::ffff:127.0.0.1 - - [09/Mar/2025:22:13:54 +0000] \"POST /initiate-payment HTTP/1.1\" 200 1745 \"-\" \"Thunder Client (https://www.thunderclient.com)\"","timestamp":"2025-03-09T22:13:54.377Z"}
 {"level":"info","message":"::ffff:127.0.0.1 - - [09/Mar/2025:22:15:02 +0000] \"POST /initiate-payment HTTP/1.1\" 200 1746 \"-\" \"Thunder Client (https://www.thunderclient.com)\"","timestamp":"2025-03-09T22:15:02.190Z"}
+{"level":"info","message":"Server running on port 4000","timestamp":"2025-03-09T22:43:41.407Z"}
+{"level":"info","message":"MongoDB connected","timestamp":"2025-03-09T22:43:42.470Z"}
+{"level":"info","message":"::ffff:127.0.0.1 - - [09/Mar/2025:22:43:50 +0000] \"POST /initiate-payment HTTP/1.1\" 200 1748 \"-\" \"Thunder Client (https://www.thunderclient.com)\"","timestamp":"2025-03-09T22:43:50.946Z"}
+{"level":"info","message":"::ffff:127.0.0.1 - - [09/Mar/2025:22:44:11 +0000] \"POST /initiate-payment HTTP/1.1\" 200 1746 \"-\" \"Thunder Client (https://www.thunderclient.com)\"","timestamp":"2025-03-09T22:44:11.402Z"}
