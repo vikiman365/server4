@@ -40,9 +40,8 @@ app.use(bodyParser.json());
 app.use(cookieParser());
 app.use(helmet());
 app.use(cors({
-  // adjust to your frontend domain if needed
-    
-  credentials: true,
+  origin: 'https://crypto1-o3kl.vercel.app', // Only allow this domain
+  credentials: true, // Enable credentials (cookies, authorization headers, etc.)
 }));
 
 // HTTP request logging with Morgan (integrated with Winston)
