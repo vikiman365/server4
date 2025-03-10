@@ -41,6 +41,7 @@ app.use(cookieParser());
 app.use(helmet());
 app.use(cors({
   // adjust to your frontend domain if needed
+    origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
   credentials: true,
 }));
 
@@ -157,34 +158,36 @@ app.post('/api/auth/signup', async (req, res) => {
 });
 
 // Sign In Route
+// Sign In Route
 app.post('/api/auth/signin', async (req, res) => {
-  const { email, password } = req.body;
-  if (!email || !password) {
-    logger.warn('Signin failed: Missing email or password');
-    return res.status(400).json({ error: 'Please provide email and password' });
-  }
-  try {
-    const user = await User.findOne({ email });
-    if (!user) {
-      logger.warn('Signin failed: User not found', { email });
-      return res.status(400).json({ error: 'Invalid credentials' });
+    const { email, password } = req.body;
+    if (!email || !password) {
+      logger.warn('Signin failed: Missing email or password');
+      return res.status(400).json({ error: 'Please provide email and password' });
     }
-    const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) {
-      logger.warn('Signin failed: Incorrect password', { email });
-      return res.status(400).json({ error: 'Invalid credentials' });
+    try {
+      const user = await User.findOne({ email });
+      if (!user) {
+        logger.warn('Signin failed: User not found', { email });
+        return res.status(400).json({ error: 'Invalid credentials' });
+      }
+      const isMatch = await bcrypt.compare(password, user.password);
+      if (!isMatch) {
+        logger.warn('Signin failed: Incorrect password', { email });
+        return res.status(400).json({ error: 'Invalid credentials' });
+      }
+      const token = generateToken(user);
+      logger.info('User signed in successfully', { email: user.email, id: user._id });
+      // Set token in an HttpOnly cookie
+      res.cookie('token', token, { httpOnly: true, secure: true, sameSite: 'Strict', maxAge: 7 * 24 * 60 * 60 * 1000 });
+      // Return token along with the success message
+      res.status(200).json({ message: 'Sign in successful', token });
+    } catch (error) {
+      logger.error('Signin error:', error);
+      res.status(500).json({ error: 'Server error' });
     }
-    const token = generateToken(user);
-    logger.info('User signed in successfully', { email: user.email, id: user._id });
-    // Set token in an HttpOnly cookie
-    res.cookie('token', token, { httpOnly: true, secure: true, sameSite: 'Strict', maxAge: 7 * 24 * 60 * 60 * 1000 });
-    res.status(200).json({ message: 'Sign in successful' });
-  } catch (error) {
-    logger.error('Signin error:', error);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
+  });
+  
 // Protected Route Example
 app.get('/api/auth/protected', protect, (req, res) => {
   logger.info('Protected route accessed', { user: req.user });
@@ -196,131 +199,132 @@ app.get('/api/auth/protected', protect, (req, res) => {
 // ---------------------------
 
 function logTransaction(action, details) {
-  console.log({
-    level: 'info',
-    timestamp: new Date().toISOString(),
-    action,
-    details
-  });
-}
-
-// Helper function to verify a transaction using Paystack API
-async function verifyTransaction(reference) {
-  try {
-    const response = await axios.get(
-      `${baseURL}/transaction/verify/${encodeURIComponent(reference)}`,
-      {
-        headers: {
-          Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`
-        }
-      }
-    );
-    logTransaction('VerificationResponse', {
-      reference,
-      status: response.status,
-      data: response.data
+    console.log({
+      level: 'info',
+      timestamp: new Date().toISOString(),
+      action,
+      details
     });
-    return response.data;
-  } catch (error) {
-    logTransaction('VerificationError', {
-      reference,
-      error: error.response ? error.response.data : error.message
-    });
-    throw error;
   }
-}
-
-// Initiate Payment Endpoint
-// This endpoint calls Paystack to initiate a mobile money charge (using Mpesa) and does NOT update the user record immediately.
-app.post('/initiate-payment', async (req, res) => {
-  try {
-    const { amount, email, phone } = req.body;
-    logTransaction('PaymentInitiated', { amount, email, phone });
-    const response = await axios.post(
-      `${baseURL}/charge`,
-      {
-        amount: amount * 100, // Convert to kobo
-        email,
-        mobile_money: { phone, provider: 'mpesa' }
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
-          'Content-Type': 'application/json'
+  
+  // Helper function to verify a transaction using Paystack API
+  async function verifyTransaction(reference) {
+    try {
+      const response = await axios.get(
+        `${baseURL}/transaction/verify/${encodeURIComponent(reference)}`,
+        {
+          headers: {
+            Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`
+          }
         }
-      }
-    );
-    logTransaction('PaystackAPIResponse', { status: response.status, data: response.data });
-    // Optionally, perform immediate verification
-    const verification = await verifyTransaction(response.data.data.reference);
-    res.json({ success: true, paymentInitiated: response.data, verificationResult: verification });
-  } catch (error) {
-    logTransaction('PaymentError', { error: error.response ? error.response.data : error.message, stack: error.stack });
-    const statusCode = error.response?.status || 500;
-    res.status(statusCode).json({ success: false, error: error.response?.data || error.message });
-  }
-});
-
-// Dedicated Verification Endpoint
-// This endpoint verifies a transaction and, if successful, updates the user's record in MongoDB.
-app.get('/verify-payment/:reference', async (req, res) => {
-  try {
-    const { reference } = req.params;
-    logTransaction('ManualVerificationAttempt', { reference });
-    const result = await verifyTransaction(reference);
-    if (result.data.status === 'success') {
-      const amount = result.data.amount / 100;
-      const user = await User.findOne({ email: result.data.customer.email });
-      if (user) {
-        user.investmentBalance += amount;
-        user.totalInvested += amount;
-        user.mines = Math.floor(user.investmentBalance / 500);
-        await user.save();
-      }
-    }
-    res.json({ success: true, verifiedData: result.data });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.response?.data || error.message });
-  }
-});
-
-// Paystack Webhook Handler
-// This endpoint processes incoming webhooks from Paystack to automatically update user records.
-app.post('/paystack-webhook', (req, res) => {
-  const signature = req.headers['x-paystack-signature'];
-  const hash = crypto.createHmac('sha512', PAYSTACK_SECRET_KEY)
-                     .update(JSON.stringify(req.body))
-                     .digest('hex');
-  if (hash !== signature) {
-    logTransaction('WebhookSecurityFail', { receivedSignature: signature, computedHash: hash });
-    return res.status(401).send('Unauthorized');
-  }
-  const event = req.body;
-  logTransaction('WebhookReceived', event);
-  switch (event.event) {
-    case 'charge.success':
-      logTransaction('PaymentSuccess', event.data);
-      // Update user record based on customer email
-      User.findOne({ email: event.data.customer.email }).then(user => {
-        if (user) {
-          user.investmentBalance += event.data.amount / 100;
-          user.totalInvested += event.data.amount / 100;
-          user.mines = Math.floor(user.investmentBalance / 500);
-          user.save();
-        }
+      );
+      logTransaction('VerificationResponse', {
+        reference,
+        status: response.status,
+        data: response.data
       });
-      break;
-    case 'charge.failed':
-      logTransaction('PaymentFailed', event.data);
-      break;
-    case 'transfer.success':
-      logTransaction('TransferSuccess', event.data);
-      break;
-    default:
-      logTransaction('UnhandledEvent', event);
+      return response.data;
+    } catch (error) {
+      logTransaction('VerificationError', {
+        reference,
+        error: error.response ? error.response.data : error.message
+      });
+      throw error;
+    }
   }
-  res.sendStatus(200);
-});
+  
+  // Initiate Payment Endpoint
+  // This endpoint calls Paystack to initiate a mobile money charge (using Mpesa) and waits for verification.
+  app.post('/initiate-payment', async (req, res) => {
+    try {
+      const { amount, email, phone } = req.body;
+      logTransaction('PaymentInitiated', { amount, email, phone });
+      const response = await axios.post(
+        `${baseURL}/charge`,
+        {
+          amount: amount * 100, // Convert to kobo
+          email,
+          mobile_money: { phone, provider: 'mpesa' }
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+      logTransaction('PaystackAPIResponse', { status: response.status, data: response.data });
+      // Await immediate verification from Paystack
+      const verification = await verifyTransaction(response.data.data.reference);
+      // Return payment and verification result
+      res.json({ success: true, paymentInitiated: response.data, verificationResult: verification });
+    } catch (error) {
+      logTransaction('PaymentError', { error: error.response ? error.response.data : error.message, stack: error.stack });
+      const statusCode = error.response?.status || 500;
+      res.status(statusCode).json({ success: false, error: error.response?.data});
+    }
+  });
+  
+  // Dedicated Verification Endpoint
+  // This endpoint verifies a transaction and updates the user's record if the payment is successful.
+  app.get('/verify-payment/:reference', async (req, res) => {
+    try {
+      const { reference } = req.params;
+      logTransaction('ManualVerificationAttempt', { reference });
+      const result = await verifyTransaction(reference);
+      if (result.data.status === 'success') {
+        const amount = result.data.amount / 100;
+        const user = await User.findOne({ email: result.data.customer.email });
+        if (user) {
+          user.investmentBalance += amount;
+          user.totalInvested += amount;
+          user.mines = Math.floor(user.investmentBalance / 500);
+          await user.save();
+        }
+      }
+      res.json({ success: true, verifiedData: result.data });
+    } catch (error) {
+      res.status(500).json({ success: false, error: error.response?.data || error.message });
+    }
+  });
+  
+  // Paystack Webhook Handler
+  // This endpoint processes incoming webhooks from Paystack to automatically update user records.
+  app.post('/paystack-webhook', (req, res) => {
+    const signature = req.headers['x-paystack-signature'];
+    const hash = crypto.createHmac('sha512', PAYSTACK_SECRET_KEY)
+                       .update(JSON.stringify(req.body))
+                       .digest('hex');
+    if (hash !== signature) {
+      logTransaction('WebhookSecurityFail', { receivedSignature: signature, computedHash: hash });
+      return res.status(401).send('Unauthorized');
+    }
+    const event = req.body;
+    logTransaction('WebhookReceived', event);
+    switch (event.event) {
+      case 'charge.success':
+        logTransaction('PaymentSuccess', event.data);
+        // Update user record based on customer email
+        User.findOne({ email: event.data.customer.email }).then(user => {
+          if (user) {
+            user.investmentBalance += event.data.amount / 100;
+            user.totalInvested += event.data.amount / 100;
+            user.mines = Math.floor(user.investmentBalance / 500);
+            user.save();
+          }
+        });
+        break;
+      case 'charge.failed':
+        logTransaction('PaymentFailed', event.data);
+        break;
+      case 'transfer.success':
+        logTransaction('TransferSuccess', event.data);
+        break;
+      default:
+        logTransaction('UnhandledEvent', event);
+    }
+    res.sendStatus(200);
+  });
 
 // ---------------------------
 // Start Server & Serverless Handler
