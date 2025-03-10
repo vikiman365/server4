@@ -41,7 +41,7 @@ app.use(cookieParser());
 app.use(helmet());
 app.use(cors({
   // adjust to your frontend domain if needed
-    origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
+    
   credentials: true,
 }));
 
