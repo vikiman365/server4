@@ -6,7 +6,6 @@ const rateLimit = require('express-rate-limit');
 const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const bodyParser = require('body-parser');
 const cookieParser = require('cookie-parser');
 const serverless = require('serverless-http');
 const morgan = require('morgan');
@@ -16,6 +15,9 @@ const crypto = require('crypto');
 
 const app = express();
 const PORT = process.env.PORT || 4000;
+
+// Trust the first proxy (important for rate limiting behind a proxy/Vercel)
+app.set('trust proxy', 1);
 
 // Logger configuration with Winston
 const logger = winston.createLogger({
@@ -35,33 +37,30 @@ const logger = winston.createLogger({
 // Middlewares
 // -----------------------------
 app.use(express.json());
-app.use(bodyParser.json());
 app.use(cookieParser());
 app.use(helmet());
 
-// Use standard CORS middleware (update origin for production)
+// Standard CORS middleware (update origin for production)
 app.use(cors({
-  origin: 'https://crypto1-ten.vercel.app', // Change this to your production frontend's origin as needed.
+  origin: 'https://crypto1-ten.vercel.app', // Change this to your production frontend's URL when needed.
   credentials: true,
 }));
 
-// ***Catch-All OPTIONS Route***  
-// This route immediately responds to any OPTIONS (preflight) request.
+// Catch-all OPTIONS route to handle preflight requests
 app.options('*', (req, res) => {
-  res.setHeader('Access-Control-Allow-Origin', 'http://localhost:3000'); // Update for production.
+  res.setHeader('Access-Control-Allow-Origin', 'https://crypto1-ten.vercel.app'); // Update for production.
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   res.setHeader('Access-Control-Allow-Credentials', 'true');
   return res.status(200).end();
 });
 
-// ***Global Middleware to Set CORS Headers on Every Response***  
+// Global middleware to set CORS headers on every response
 app.use((req, res, next) => {
-  res.setHeader('Access-Control-Allow-Origin', 'http://localhost:3000'); // Update as needed.
+  res.setHeader('Access-Control-Allow-Origin', 'https://crypto1-ten.vercel.app'); // Update as needed.
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   res.setHeader('Access-Control-Allow-Credentials', 'true');
-  // If the request is OPTIONS, end here.
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
   }
@@ -71,10 +70,11 @@ app.use((req, res, next) => {
 // Logging HTTP requests with Morgan
 app.use(morgan('combined', { stream: { write: message => logger.info(message.trim()) } }));
 
-// Rate limiter to protect against repeated requests
+// Rate limiter with fallback key generator for IP
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 100,
+  keyGenerator: (req, res) => req.ip || req.headers['x-forwarded-for'] || 'unknown',
   message: 'Too many requests from this IP, please try again later.'
 });
 app.use(limiter);
@@ -87,10 +87,7 @@ if (!MONGODB_URI) {
   logger.error('MONGODB_URI is not defined in .env');
   process.exit(1);
 }
-mongoose.connect(MONGODB_URI, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
-})
+mongoose.connect(MONGODB_URI)
 .then(() => logger.info('MongoDB connected'))
 .catch(err => logger.error('MongoDB connection error:', err));
 
@@ -308,7 +305,7 @@ app.post('/initiate-payment', async (req, res) => {
     const response = await axios.post(
       `${baseURL}/charge`,
       {
-        amount: amount * 100, // Convert to smallest unit if needed (e.g., kobo)
+        amount: amount * 100, // Convert to smallest unit (e.g., kobo)
         email,
         mobile_money: { phone, provider: 'mpesa' }
       },
@@ -402,4 +399,5 @@ if (process.env.NODE_ENV !== 'serverless') {
   });
 }
 
-module.exports.handler = serverless(app);
+// Export the serverless function as the default export
+module.exports = serverless(app);
