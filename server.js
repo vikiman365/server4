@@ -36,10 +36,24 @@ app.use(express.json());
 app.use(bodyParser.json());
 app.use(cookieParser());
 app.use(helmet());
+const allowedOrigins = [
+  'https://crypto1-rfzlrngqc-vikiman365s-projects.vercel.app',
+  'https://crypto1-ten.vercel.app',
+ 
+];
+
 app.use(cors({
-  origin: 'https://crypto1-rfzlrngqc-vikiman365s-projects.vercel.app', // update this to your frontend's origin in production
+  origin: (origin, callback) => {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.indexOf(origin) === -1) {
+      return callback(new Error('CORS policy does not allow access from this origin: ' + origin), false);
+    }
+    return callback(null, true);
+  },
   credentials: true,
 }));
+
 app.use(morgan('combined', { stream: { write: message => logger.info(message.trim()) } }));
 
 const limiter = rateLimit({
