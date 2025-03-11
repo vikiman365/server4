@@ -16,10 +16,6 @@ const crypto = require('crypto');
 
 const app = express();
 const PORT = process.env.PORT || 4000;
-app.use(cors({
-  origin: 'https://crypto1-ten.vercel.app', // Change this to your frontend's origin in production
-  credentials: true,
-}));
 
 // Logger configuration with Winston
 const logger = winston.createLogger({
@@ -43,13 +39,39 @@ app.use(bodyParser.json());
 app.use(cookieParser());
 app.use(helmet());
 
-// Set up CORS (update origin for production as needed)
+// Use standard CORS middleware (update origin for production)
+app.use(cors({
+  origin: 'https://crypto1-ten.vercel.app', // Change this to your production frontend's origin as needed.
+  credentials: true,
+}));
 
+// ***Catch-All OPTIONS Route***  
+// This route immediately responds to any OPTIONS (preflight) request.
+app.options('*', (req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', 'http://localhost:3000'); // Update for production.
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  return res.status(200).end();
+});
+
+// ***Global Middleware to Set CORS Headers on Every Response***  
+app.use((req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', 'http://localhost:3000'); // Update as needed.
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  // If the request is OPTIONS, end here.
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+  next();
+});
 
 // Logging HTTP requests with Morgan
 app.use(morgan('combined', { stream: { write: message => logger.info(message.trim()) } }));
 
-// Rate limiter to limit repeated requests
+// Rate limiter to protect against repeated requests
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 100,
@@ -82,7 +104,7 @@ const userSchema = new mongoose.Schema({
   country:     { type: String, required: true },
   phoneNumber: { type: String, required: true },
   investmentBalance: { type: Number, default: 0 },
-  totalInvested: { type: Number, default: 0 }, // used in payment endpoints
+  totalInvested: { type: Number, default: 0 },
   mines: { type: Number, default: 0 },
   role: { type: String, default: "user" },
   refreshToken: { type: String },
@@ -250,7 +272,7 @@ app.post('/api/auth/refresh', async (req, res) => {
 const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
 const baseURL = process.env.PAYSTACK_BASE_URL || 'https://api.paystack.co';
 
-// Helper function to verify a transaction via Paystack API
+// Helper: Verify Transaction via Paystack API
 async function verifyTransaction(reference) {
   try {
     const response = await axios.get(
@@ -286,7 +308,7 @@ app.post('/initiate-payment', async (req, res) => {
     const response = await axios.post(
       `${baseURL}/charge`,
       {
-        amount: amount * 100, // Convert to smallest currency unit if needed (e.g., kobo)
+        amount: amount * 100, // Convert to smallest unit if needed (e.g., kobo)
         email,
         mobile_money: { phone, provider: 'mpesa' }
       },
@@ -298,7 +320,7 @@ app.post('/initiate-payment', async (req, res) => {
       }
     );
     logger.info({ action: 'PaystackAPIResponse', status: response.status, data: response.data });
-    // Verify transaction immediately
+    // Immediately verify the transaction
     const verification = await verifyTransaction(response.data.data.reference);
     res.json({ success: true, paymentInitiated: response.data, verificationResult: verification });
   } catch (error) {
@@ -349,7 +371,7 @@ app.post('/paystack-webhook', (req, res) => {
   switch (event.event) {
     case 'charge.success':
       logger.info({ action: 'PaymentSuccess', data: event.data });
-      // Update user based on customer email
+      // Update user record based on customer email
       User.findOne({ email: event.data.customer.email }).then(user => {
         if (user) {
           user.investmentBalance += event.data.amount / 100;
