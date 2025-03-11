@@ -14,6 +14,29 @@ const winston = require('winston');
 // Initialize Express
 const app = express();
 const PORT = process.env.PORT || 3000;
+// List of allowed origins
+const allowedOrigins = [
+  'https://crypto1-ten.vercel.app',
+  'https://crypto1-rfzlrngqc-vikiman365s-projects.vercel.app'
+];
+
+// Global middleware to set CORS headers explicitly based on request origin
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (allowedOrigins.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+  }
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+
+  // For preflight requests, send response immediately.
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+  next();
+});
+app.use(cors(allowedOrigins))
 
 // Winston Logger Configuration
 const logger = winston.createLogger({
@@ -30,38 +53,6 @@ const logger = winston.createLogger({
 });
 
 // CORS Configuration
-const allowedOrigins = [
-  'https://crypto1-ten.vercel.app',
-  'https://crypto1-rfzlrngqc-vikiman365s-projects.vercel.app',
-  ...(process.env.NODE_ENV === 'development' ? ['http://localhost:3000'] : [])
-];
-
-const corsOptions = {
-  origin: (origin, callback) => {
-    if (!origin && process.env.NODE_ENV === 'development') return callback(null, true);
-    if (allowedOrigins.indexOf(origin) !== -1 || !origin) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
-};
-
-app.use((req, res, next) => {
-  res.setHeader('Access-Control-Allow-Origin', 'https://crypto1-ten.vercel.app');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
-  
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
-  }
-  next();
-});
-
 
 // Middleware Ordering (Critical for CORS)
 app.use(cors(corsOptions));
