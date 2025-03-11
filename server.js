@@ -50,6 +50,19 @@ const corsOptions = {
   allowedHeaders: ['Content-Type', 'Authorization']
 };
 
+app.use((req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', 'https://crypto1-ten.vercel.app');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+  next();
+});
+
+
 // Middleware Ordering (Critical for CORS)
 app.use(cors(corsOptions));
 app.options('*', cors(corsOptions)); // Preflight handling
