@@ -1,4 +1,3 @@
-// server.js
 require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
@@ -15,7 +14,12 @@ const winston = require('winston');
 const axios = require('axios');
 const crypto = require('crypto');
 
-// Create Winston logger for detailed logging
+// Create Express app
+const app = express();
+
+// -----------------------------
+// Logger Setup with Winston
+// -----------------------------
 const logger = winston.createLogger({
   level: 'info',
   format: winston.format.combine(
@@ -36,15 +40,16 @@ app.use(express.json());
 app.use(bodyParser.json());
 app.use(cookieParser());
 app.use(helmet());
+
+// CORS configuration for allowed origins
 const allowedOrigins = [
   'https://crypto1-rfzlrngqc-vikiman365s-projects.vercel.app',
   'https://crypto1-ten.vercel.app',
- 
 ];
 
-app.use(cors({
+const corsOptions = {
   origin: (origin, callback) => {
-    // Allow requests with no origin (like mobile apps or curl requests)
+    // Allow requests with no origin (e.g., curl or mobile apps)
     if (!origin) return callback(null, true);
     if (allowedOrigins.indexOf(origin) === -1) {
       return callback(new Error('CORS policy does not allow access from this origin: ' + origin), false);
@@ -52,12 +57,17 @@ app.use(cors({
     return callback(null, true);
   },
   credentials: true,
-}));
+};
+
+app.use(cors(corsOptions));
+// Ensure that preflight (OPTIONS) requests are handled correctly
+app.options('*', cors(corsOptions));
 
 app.use(morgan('combined', { stream: { write: message => logger.info(message.trim()) } }));
 
+// Rate limiter to protect against too many requests
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
+  windowMs: 15 * 60 * 1000, // 15 minutes
   max: 100,
   message: 'Too many requests from this IP, please try again later.'
 });
@@ -88,6 +98,7 @@ const userSchema = new mongoose.Schema({
   country:     { type: String, required: true },
   phoneNumber: { type: String, required: true },
   investmentBalance: { type: Number, default: 0 },
+  totalInvested: { type: Number, default: 0 },
   mines: { type: Number, default: 0 },
   role: { type: String, default: "user" },
   refreshToken: { type: String },
@@ -155,9 +166,9 @@ app.post('/api/auth/signup', async (req, res) => {
           password: hashedPassword,
           country,
           phoneNumber,
-          role: "user" // default role
+          role: "user"
       });
-      // Generate tokens (for immediate sign in if desired)
+      // Generate tokens for immediate sign-in if desired
       const accessToken = generateAccessToken(user);
       const refreshToken = generateRefreshToken(user);
       user.refreshToken = refreshToken;
@@ -168,10 +179,9 @@ app.post('/api/auth/signup', async (req, res) => {
           sameSite: "Strict", 
           maxAge: 7 * 24 * 60 * 60 * 1000 
       });
-      // Return a success message; frontends may then require the user to sign in
       res.status(201).json({ message: 'Sign up successful. Please sign in.', accessToken });
   } catch (error) {
-      console.error('Sign up error:', error);
+      logger.error('Sign up error:', error);
       res.status(500).json({ error: 'Server error' });
   }
 });
@@ -203,7 +213,7 @@ app.post('/api/auth/signin', async (req, res) => {
       });
       res.status(200).json({ message: 'Sign in successful', accessToken, roles: [user.role] });
   } catch (error) {
-      console.error('Sign in error:', error);
+      logger.error('Sign in error:', error);
       res.status(500).json({ error: 'Server error' });
   }
 });
@@ -217,7 +227,7 @@ app.get('/api/auth/protected', protect, async (req, res) => {
       }
       res.status(200).json({ user });
   } catch (error) {
-      console.error('Protected route error:', error);
+      logger.error('Protected route error:', error);
       res.status(500).json({ error: 'Server error' });
   }
 });
@@ -246,25 +256,24 @@ app.post('/api/auth/refresh', async (req, res) => {
       });
       res.status(200).json({ accessToken: newAccessToken });
   } catch (error) {
-      console.error('Refresh token error:', error);
+      logger.error('Refresh token error:', error);
       res.status(401).json({ error: 'Invalid refresh token' });
   }
 });
-// ---------------------------
-// Payment & Verification Logic
-// ---------------------------
 
+// -----------------------------
+// Payment & Verification Logic
+// -----------------------------
+const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
+const baseURL = process.env.PAYSTACK_BASE_URL || 'https://api.paystack.co';
+
+// Helper function to log transactions
 function logTransaction(action, details) {
-    console.log({
-      level: 'info',
-      timestamp: new Date().toISOString(),
-      action,
-      details
-    });
-  }
-  
-  // Helper function to verify a transaction using Paystack API
-  async function verifyTransaction(reference) {
+    logger.info({ action, details, timestamp: new Date().toISOString() });
+}
+
+// Helper function to verify a transaction using Paystack API
+async function verifyTransaction(reference) {
     try {
       const response = await axios.get(
         `${baseURL}/transaction/verify/${encodeURIComponent(reference)}`,
@@ -287,105 +296,107 @@ function logTransaction(action, details) {
       });
       throw error;
     }
-  }
-  
-  // Initiate Payment Endpoint
-  // This endpoint calls Paystack to initiate a mobile money charge (using Mpesa) and waits for verification.
-  app.post('/initiate-payment', async (req, res) => {
-    try {
-      const { amount, email, phone } = req.body;
-      logTransaction('PaymentInitiated', { amount, email, phone });
-      const response = await axios.post(
-        `${baseURL}/charge`,
-        {
-          amount: amount * 100, // Convert to kobo
-          email,
-          mobile_money: { phone, provider: 'mpesa' }
-        },
-        {
-          headers: {
-            Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
-            'Content-Type': 'application/json'
-          }
-        }
-      );
-      logTransaction('PaystackAPIResponse', { status: response.status, data: response.data });
-      // Await immediate verification from Paystack
-      const verification = await verifyTransaction(response.data.data.reference);
-      // Return payment and verification result
-      res.json({ success: true, paymentInitiated: response.data, verificationResult: verification });
-    } catch (error) {
-      logTransaction('PaymentError', { error: error.response ? error.response.data : error.message, stack: error.stack });
-      const statusCode = error.response?.status || 500;
-      res.status(statusCode).json({ success: false, error: error.response?.data});
-    }
-  });
-  
-  // Dedicated Verification Endpoint
-  // This endpoint verifies a transaction and updates the user's record if the payment is successful.
-  app.get('/verify-payment/:reference', async (req, res) => {
-    try {
-      const { reference } = req.params;
-      logTransaction('ManualVerificationAttempt', { reference });
-      const result = await verifyTransaction(reference);
-      if (result.data.status === 'success') {
-        const amount = result.data.amount / 100;
-        const user = await User.findOne({ email: result.data.customer.email });
-        if (user) {
-          user.investmentBalance += amount;
-          user.totalInvested += amount;
-          user.mines = Math.floor(user.investmentBalance / 500);
-          await user.save();
+}
+
+// Initiate Payment Endpoint
+app.post('/initiate-payment', async (req, res) => {
+  try {
+    const { amount, email, phone } = req.body;
+    logTransaction('PaymentInitiated', { amount, email, phone });
+    const response = await axios.post(
+      `${baseURL}/charge`,
+      {
+        amount: amount * 100, // Convert amount if needed
+        email,
+        mobile_money: { phone, provider: 'mpesa' }
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
+          'Content-Type': 'application/json'
         }
       }
-      res.json({ success: true, verifiedData: result.data });
-    } catch (error) {
-      res.status(500).json({ success: false, error: error.response?.data || error.message });
-    }
-  });
-  
-  // Paystack Webhook Handler
-  // This endpoint processes incoming webhooks from Paystack to automatically update user records.
-  app.post('/paystack-webhook', (req, res) => {
-    const signature = req.headers['x-paystack-signature'];
-    const hash = crypto.createHmac('sha512', PAYSTACK_SECRET_KEY)
-                       .update(JSON.stringify(req.body))
-                       .digest('hex');
-    if (hash !== signature) {
-      logTransaction('WebhookSecurityFail', { receivedSignature: signature, computedHash: hash });
-      return res.status(401).send('Unauthorized');
-    }
-    const event = req.body;
-    logTransaction('WebhookReceived', event);
-    switch (event.event) {
-      case 'charge.success':
-        logTransaction('PaymentSuccess', event.data);
-        // Update user record based on customer email
-        User.findOne({ email: event.data.customer.email }).then(user => {
-          if (user) {
-            user.investmentBalance += event.data.amount / 100;
-            user.totalInvested += event.data.amount / 100;
-            user.mines = Math.floor(user.investmentBalance / 500);
-            user.save();
-          }
-        });
-        break;
-      case 'charge.failed':
-        logTransaction('PaymentFailed', event.data);
-        break;
-      case 'transfer.success':
-        logTransaction('TransferSuccess', event.data);
-        break;
-      default:
-        logTransaction('UnhandledEvent', event);
-    }
-    res.sendStatus(200);
-  });
-
-// ---------------------------
-// Start Server & Serverless Handler
-// ---------------------------
-app.listen(PORT, () => {
-  logger.info(`Server running on port ${PORT}`);
+    );
+    logTransaction('PaystackAPIResponse', { status: response.status, data: response.data });
+    // Await immediate verification from Paystack
+    const verification = await verifyTransaction(response.data.data.reference);
+    res.json({ success: true, paymentInitiated: response.data, verificationResult: verification });
+  } catch (error) {
+    logTransaction('PaymentError', { error: error.response ? error.response.data : error.message, stack: error.stack });
+    const statusCode = error.response?.status || 500;
+    res.status(statusCode).json({ success: false, error: error.response?.data });
+  }
 });
+
+// Dedicated Verification Endpoint
+app.get('/verify-payment/:reference', async (req, res) => {
+  try {
+    const { reference } = req.params;
+    logTransaction('ManualVerificationAttempt', { reference });
+    const result = await verifyTransaction(reference);
+    if (result.data.status === 'success') {
+      const amount = result.data.amount / 100;
+      const user = await User.findOne({ email: result.data.customer.email });
+      if (user) {
+        user.investmentBalance += amount;
+        user.totalInvested += amount;
+        user.mines = Math.floor(user.investmentBalance / 500);
+        await user.save();
+      }
+    }
+    res.json({ success: true, verifiedData: result.data });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.response?.data || error.message });
+  }
+});
+
+// Paystack Webhook Handler
+app.post('/paystack-webhook', (req, res) => {
+  const signature = req.headers['x-paystack-signature'];
+  const hash = crypto.createHmac('sha512', PAYSTACK_SECRET_KEY)
+                     .update(JSON.stringify(req.body))
+                     .digest('hex');
+  if (hash !== signature) {
+    logTransaction('WebhookSecurityFail', { receivedSignature: signature, computedHash: hash });
+    return res.status(401).send('Unauthorized');
+  }
+  const event = req.body;
+  logTransaction('WebhookReceived', event);
+  switch (event.event) {
+    case 'charge.success':
+      logTransaction('PaymentSuccess', event.data);
+      // Update user record based on customer email
+      User.findOne({ email: event.data.customer.email }).then(user => {
+        if (user) {
+          user.investmentBalance += event.data.amount / 100;
+          user.totalInvested += event.data.amount / 100;
+          user.mines = Math.floor(user.investmentBalance / 500);
+          user.save();
+        }
+      });
+      break;
+    case 'charge.failed':
+      logTransaction('PaymentFailed', event.data);
+      break;
+    case 'transfer.success':
+      logTransaction('TransferSuccess', event.data);
+      break;
+    default:
+      logTransaction('UnhandledEvent', event);
+  }
+  res.sendStatus(200);
+});
+
+// -----------------------------
+// Start Server & Serverless Handler
+// -----------------------------
+const PORT = process.env.PORT || 3000;
+// For local development, start the server. In Vercel, the exported handler is used.
+if (process.env.NODE_ENV !== 'serverless') {
+  app.listen(PORT, () => {
+    logger.info(`Server running on port ${PORT}`);
+  });
+}
+
+// Export the serverless handler for Vercel
 module.exports.handler = serverless(app);
