@@ -19,60 +19,54 @@ const crypto = require('crypto');
 const logger = winston.createLogger({
   level: 'info',
   format: winston.format.combine(
-    winston.format.timestamp(),
-    winston.format.json()
+      winston.format.timestamp(),
+      winston.format.json()
   ),
   transports: [
-    new winston.transports.Console(),
-    new winston.transports.File({ filename: 'error.log', level: 'error' }),
-    new winston.transports.File({ filename: 'combined.log' }),
+      new winston.transports.Console(),
+      new winston.transports.File({ filename: 'error.log', level: 'error' }),
+      new winston.transports.File({ filename: 'combined.log' }),
   ],
 });
 
-const app = express();
-const PORT = process.env.PORT || 4000;
-
-// ---------------------------
-// Security Middlewares Setup
-// ---------------------------
+// -----------------------------
+// Middlewares
+// -----------------------------
 app.use(express.json());
 app.use(bodyParser.json());
 app.use(cookieParser());
 app.use(helmet());
 app.use(cors({
-  origin: 'https://crypto1-o3kl.vercel.app', // Only allow this domain
-  credentials: true, // Enable credentials (cookies, authorization headers, etc.)
+  origin: 'https://crypto1-rfzlrngqc-vikiman365s-projects.vercel.app', // update this to your frontend's origin in production
+  credentials: true,
 }));
-
-// HTTP request logging with Morgan (integrated with Winston)
 app.use(morgan('combined', { stream: { write: message => logger.info(message.trim()) } }));
 
-// Rate limiting: 100 requests per 15 minutes per IP
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 100,
-  message: 'Too many requests from this IP, please try again later.',
+  message: 'Too many requests from this IP, please try again later.'
 });
 app.use(limiter);
 
-// ---------------------------
-// MongoDB Connection Setup
-// ---------------------------
+// -----------------------------
+// MongoDB Connection
+// -----------------------------
 const MONGODB_URI = process.env.MONGODB_URI;
 if (!MONGODB_URI) {
   logger.error('MONGODB_URI is not defined in .env');
-  throw new Error('Please define the MONGODB_URI environment variable');
+  process.exit(1);
 }
 mongoose.connect(MONGODB_URI, {
   useNewUrlParser: true,
   useUnifiedTopology: true,
 })
-  .then(() => logger.info('MongoDB connected'))
-  .catch(err => logger.error('MongoDB connection error:', err));
+.then(() => logger.info('MongoDB connected'))
+.catch(err => logger.error('MongoDB connection error:', err));
 
-// ---------------------------
-// User Schema & Model Definition
-// ---------------------------
+// -----------------------------
+// User Schema & Model
+// -----------------------------
 const userSchema = new mongoose.Schema({
   username:    { type: String, required: true },
   email:       { type: String, required: true, unique: true },
@@ -81,118 +75,167 @@ const userSchema = new mongoose.Schema({
   phoneNumber: { type: String, required: true },
   investmentBalance: { type: Number, default: 0 },
   mines: { type: Number, default: 0 },
-  totalInvested: { type: Number, default: 0 },
+  role: { type: String, default: "user" },
+  refreshToken: { type: String },
 }, { timestamps: true });
 
 const User = mongoose.models.User || mongoose.model('User', userSchema);
 
-// ---------------------------
-// Utility: Generate JWT Token
-// ---------------------------
-const generateToken = (user) => {
+// -----------------------------
+// Utility Functions
+// -----------------------------
+const generateAccessToken = (user) => {
   return jwt.sign(
-    { id: user._id, email: user.email },
+    { id: user._id, email: user.email, role: user.role },
     process.env.JWT_SECRET,
+    { expiresIn: '15m' }
+  );
+};
+
+const generateRefreshToken = (user) => {
+  return jwt.sign(
+    { id: user._id, email: user.email, role: user.role },
+    process.env.JWT_REFRESH_SECRET,
     { expiresIn: '7d' }
   );
 };
 
-// ---------------------------
-// Middleware: Protect Routes
-// ---------------------------
+// -----------------------------
+// Middleware: Protect Route
+// -----------------------------
 const protect = (req, res, next) => {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    logger.warn('Unauthorized access attempt: no token provided');
-    return res.status(401).json({ error: 'Not authorized, no token provided' });
+      return res.status(401).json({ error: 'Not authorized, no token provided' });
   }
   const token = authHeader.split(' ')[1];
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = decoded;
-    next();
-  } catch (err) {
-    logger.error('Token verification failed:', err);
-    res.status(401).json({ error: 'Not authorized, token failed' });
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      req.user = decoded;
+      next();
+  } catch (error) {
+      return res.status(401).json({ error: 'Not authorized, token failed' });
   }
 };
 
-// ---------------------------
-// Authentication Routes
-// ---------------------------
-const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
-const baseURL = 'https://api.paystack.co';
+// -----------------------------
+// Routes
+// -----------------------------
 
-// Sign Up Route
+// SignUp Route
 app.post('/api/auth/signup', async (req, res) => {
   const { username, email, password, country, phoneNumber } = req.body;
   if (!username || !email || !password || !country || !phoneNumber) {
-    logger.warn('Signup failed: Missing fields', req.body);
-    return res.status(400).json({ error: 'Please provide all required fields' });
+      return res.status(400).json({ error: 'Please provide all required fields' });
   }
   try {
-    const existingUser = await User.findOne({ email });
-    if (existingUser) {
-      logger.warn('Signup failed: User already exists', { email });
-      return res.status(400).json({ error: 'User already exists' });
-    }
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(password, salt);
-    const user = await User.create({
-      username,
-      email,
-      password: hashedPassword,
-      country,
-      phoneNumber,
-    });
-    const token = generateToken(user);
-    logger.info('User signed up successfully', { email: user.email, id: user._id });
-    // Set token in an HttpOnly cookie
-    res.cookie('token', token, { httpOnly: true, secure: true, sameSite: 'Strict', maxAge: 7 * 24 * 60 * 60 * 1000 });
-    res.status(201).json({ message: 'Sign up successful' });
+      const existingUser = await User.findOne({ email });
+      if (existingUser) {
+          return res.status(409).json({ error: 'Username or Email already exists' });
+      }
+      const salt = await bcrypt.genSalt(10);
+      const hashedPassword = await bcrypt.hash(password, salt);
+      const user = await User.create({
+          username,
+          email,
+          password: hashedPassword,
+          country,
+          phoneNumber,
+          role: "user" // default role
+      });
+      // Generate tokens (for immediate sign in if desired)
+      const accessToken = generateAccessToken(user);
+      const refreshToken = generateRefreshToken(user);
+      user.refreshToken = refreshToken;
+      await user.save();
+      res.cookie('refreshToken', refreshToken, { 
+          httpOnly: true, 
+          secure: process.env.NODE_ENV === "production", 
+          sameSite: "Strict", 
+          maxAge: 7 * 24 * 60 * 60 * 1000 
+      });
+      // Return a success message; frontends may then require the user to sign in
+      res.status(201).json({ message: 'Sign up successful. Please sign in.', accessToken });
   } catch (error) {
-    logger.error('Signup error:', error);
-    res.status(500).json({ error: 'Server error' });
+      console.error('Sign up error:', error);
+      res.status(500).json({ error: 'Server error' });
   }
 });
 
-// Sign In Route
-// Sign In Route
+// SignIn Route
 app.post('/api/auth/signin', async (req, res) => {
-    const { email, password } = req.body;
-    if (!email || !password) {
-      logger.warn('Signin failed: Missing email or password');
+  const { email, password } = req.body;
+  if (!email || !password) {
       return res.status(400).json({ error: 'Please provide email and password' });
-    }
-    try {
+  }
+  try {
       const user = await User.findOne({ email });
       if (!user) {
-        logger.warn('Signin failed: User not found', { email });
-        return res.status(400).json({ error: 'Invalid credentials' });
+          return res.status(401).json({ error: 'Invalid credentials' });
       }
       const isMatch = await bcrypt.compare(password, user.password);
       if (!isMatch) {
-        logger.warn('Signin failed: Incorrect password', { email });
-        return res.status(400).json({ error: 'Invalid credentials' });
+          return res.status(401).json({ error: 'Invalid credentials' });
       }
-      const token = generateToken(user);
-      logger.info('User signed in successfully', { email: user.email, id: user._id });
-      // Set token in an HttpOnly cookie
-      res.cookie('token', token, { httpOnly: true, secure: true, sameSite: 'Strict', maxAge: 7 * 24 * 60 * 60 * 1000 });
-      // Return token along with the success message
-      res.status(200).json({ message: 'Sign in successful', token });
-    } catch (error) {
-      logger.error('Signin error:', error);
+      const accessToken = generateAccessToken(user);
+      const refreshToken = generateRefreshToken(user);
+      user.refreshToken = refreshToken;
+      await user.save();
+      res.cookie('refreshToken', refreshToken, { 
+          httpOnly: true, 
+          secure: process.env.NODE_ENV === "production", 
+          sameSite: "Strict", 
+          maxAge: 7 * 24 * 60 * 60 * 1000 
+      });
+      res.status(200).json({ message: 'Sign in successful', accessToken, roles: [user.role] });
+  } catch (error) {
+      console.error('Sign in error:', error);
       res.status(500).json({ error: 'Server error' });
-    }
-  });
-  
-// Protected Route Example
-app.get('/api/auth/protected', protect, (req, res) => {
-  logger.info('Protected route accessed', { user: req.user });
-  res.status(200).json({ message: 'This is a protected route', user: req.user });
+  }
 });
 
+// Protected Route: Returns user details needed for Dashboard
+app.get('/api/auth/protected', protect, async (req, res) => {
+  try {
+      const user = await User.findById(req.user.id).select('-password -__v -refreshToken');
+      if (!user) {
+          return res.status(404).json({ error: 'User not found' });
+      }
+      res.status(200).json({ user });
+  } catch (error) {
+      console.error('Protected route error:', error);
+      res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Refresh Token Route
+app.post('/api/auth/refresh', async (req, res) => {
+  const { refreshToken } = req.cookies;
+  if (!refreshToken) {
+      return res.status(401).json({ error: 'No refresh token provided' });
+  }
+  try {
+      const decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
+      const user = await User.findById(decoded.id);
+      if (!user || user.refreshToken !== refreshToken) {
+          return res.status(403).json({ error: 'Invalid refresh token' });
+      }
+      const newAccessToken = generateAccessToken(user);
+      const newRefreshToken = generateRefreshToken(user);
+      user.refreshToken = newRefreshToken;
+      await user.save();
+      res.cookie('refreshToken', newRefreshToken, { 
+          httpOnly: true, 
+          secure: process.env.NODE_ENV === "production", 
+          sameSite: "Strict", 
+          maxAge: 7 * 24 * 60 * 60 * 1000 
+      });
+      res.status(200).json({ accessToken: newAccessToken });
+  } catch (error) {
+      console.error('Refresh token error:', error);
+      res.status(401).json({ error: 'Invalid refresh token' });
+  }
+});
 // ---------------------------
 // Payment & Verification Logic
 // ---------------------------
