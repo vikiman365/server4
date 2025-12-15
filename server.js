@@ -152,7 +152,7 @@ const protect = (req, res, next) => {
 // -----------------------------
 
 // SignUp Route
-app.post('/api/auth/signup', async (req, res) => {
+app.post('/api/signup', async (req, res) => {
   const { username, email, password, country, phoneNumber } = req.body;
   if (!username || !email || !password || !country || !phoneNumber) {
       return res.status(400).json({ error: 'Please provide all required fields' });
